@@ -1,0 +1,22 @@
+{
+  "env": {
+    "es2022": true,
+    "node": true,
+    "jest": true
+  },
+  "extends": [
+    "airbnb-base"
+  ],
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module"
+  },
+  "rules": {
+    "no-console": "off",
+    "import/no-unresolved": "off",
+    "no-underscore-dangle": "off",
+    "consistent-return": "off",
+    "func-names": "off",
+    "no-param-reassign": ["error", { "props": false }]
+  }
+}
