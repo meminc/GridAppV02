@@ -2,13 +2,19 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const dotenv = require('dotenv');
+const { createServer } = require('http');
 const routes = require('./api/routes');
+const { initializeWebSocket } = require('./services/websocket');
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
+const httpServer = createServer(app);
 const PORT = process.env.PORT || 3001;
+
+// Initialize WebSocket
+initializeWebSocket(httpServer);
 
 // Middleware
 app.use(helmet());
@@ -43,6 +49,6 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

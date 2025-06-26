@@ -1,0 +1,5 @@
+{
+    "migrationsDirectory": "migrations",
+    "driver": "pg",
+    "connectionString": "postgresql://grid_user:grid_password@localhost:5432/grid_monitoring"
+}
