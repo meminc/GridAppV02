@@ -1,10 +1,11 @@
 const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
 const dotenv = require('dotenv');
 const { createServer } = require('http');
 const routes = require('./api/routes');
 const { initializeWebSocket } = require('./services/websocket');
+const securityMiddleware = require('./api/middleware/security');
+const rateLimiter = require('./api/middleware/rateLimiter');
+const { logger } = require('./config/database');
 
 // Load environment variables
 dotenv.config();
@@ -16,11 +17,26 @@ const PORT = process.env.PORT || 3001;
 // Initialize WebSocket
 initializeWebSocket(httpServer);
 
-// Middleware
-app.use(helmet());
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Security middleware
+securityMiddleware(app);
+
+// General rate limiting
+app.use('/api', rateLimiter.api);
+
+// Body parsing middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Request logging in development
+if (process.env.NODE_ENV === 'development') {
+  app.use((req, res, next) => {
+    logger.info(`${req.method} ${req.path}`, {
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+    next();
+  });
+}
 
 // API Routes
 app.use('/api', routes);
@@ -31,6 +47,7 @@ app.get('/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV,
+    version: process.env.npm_package_version || '1.0.0',
   });
 });
 
@@ -41,14 +58,34 @@ app.use((req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  logger.error('Unhandled error:', {
+    error: err.message,
+    stack: err.stack,
+    url: req.url,
+    method: req.method,
+    ip: req.ip,
+  });
+
+  // Don't leak error details in production
+  const isDev = process.env.NODE_ENV === 'development';
+
   res.status(err.status || 500).json({
-    error: err.message || 'Something went wrong!',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
+    error: isDev ? err.message : 'Something went wrong!',
+    ...(isDev && { stack: err.stack }),
   });
 });
 
 // Start server
 httpServer.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  logger.info(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
 });
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  logger.info('SIGTERM signal received: closing HTTP server');
+  httpServer.close(() => {
+    logger.info('HTTP server closed');
+  });
+});
+
+module.exports = app;

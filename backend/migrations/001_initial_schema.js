@@ -1,6 +1,6 @@
 exports.up = (pgm) => {
     // Create auth schema and users table
-    pgm.createSchema('auth');
+    pgm.createSchema('auth', { ifNotExists: true });
 
     pgm.createTable({ schema: 'auth', name: 'users' }, {
         id: {
@@ -42,10 +42,11 @@ exports.up = (pgm) => {
             notNull: true,
             default: pgm.func('now()'),
         },
-    });
+    },
+        { ifNotExists: true });
 
     // Create grid schema and scenarios table
-    pgm.createSchema('grid');
+    pgm.createSchema('grid', { ifNotExists: true });
 
     pgm.createTable({ schema: 'grid', name: 'scenarios' }, {
         id: {
@@ -81,10 +82,16 @@ exports.up = (pgm) => {
             notNull: true,
             default: pgm.func('now()'),
         },
-    });
+    }, { ifNotExists: true });
 
     // Create indexes
-    pgm.createIndex({ schema: 'auth', name: 'users' }, 'email');
+    pgm.createIndex({ schema: 'auth', name: 'users' }, 'email', {
+        name: 'users_email_index',
+        ifNotExists: true,
+    }, {
+        name: 'scenarios_owner_id_index',
+        ifNotExists: true,
+    });
     pgm.createIndex({ schema: 'grid', name: 'scenarios' }, 'owner_id');
 };
 

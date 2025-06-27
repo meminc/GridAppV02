@@ -12,18 +12,17 @@ import {
     VStack,
     Text,
     Alert,
-    // AlertIcon,
+    AlertIcon,
     Heading,
     Link,
 } from '@chakra-ui/react';
 import { useForm } from 'react-hook-form';
-import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
+import api from '@/utils/api';
 
-export default function LoginPage() {
-    const { login } = useAuth();
+export default function ForgotPasswordPage() {
     const router = useRouter();
-    const [error, setError] = useState('');
+    const [status, setStatus] = useState({ type: '', message: '' });
     const [loading, setLoading] = useState(false);
 
     const {
@@ -33,22 +32,20 @@ export default function LoginPage() {
     } = useForm();
 
     const onSubmit = async (data) => {
-        setError('');
+        setStatus({ type: '', message: '' });
         setLoading(true);
 
         try {
-            const result = await login(data.email, data.password);
-
-            if (!result.success) {
-                setError(result.error || 'Login failed');
-                setLoading(false);
-            } else {
-                // Success - redirect
-                router.push('/dashboard');
-            }
-        } catch (err) {
-            setError(err.message || 'An unexpected error occurred');
-            setLoading(false);
+            await api.post('/api/auth/forgot-password', data);
+            setStatus({
+                type: 'success',
+                message: 'If the email exists, a password reset link has been sent.',
+            });
+        } catch (error) {
+            setStatus({
+                type: 'error',
+                message: error.response?.data?.error || 'An error occurred',
+            });
         } finally {
             setLoading(false);
         }
@@ -67,20 +64,21 @@ export default function LoginPage() {
                     <VStack spacing={6}>
                         <Box textAlign="center">
                             <Heading size="lg" color="blue.600">
-                                Grid Monitor
+                                Forgot Password
                             </Heading>
                             <Text color="gray.600" mt={2}>
-                                Sign in to your account
+                                Enter your email to receive a reset link
                             </Text>
                         </Box>
 
-                        {error && (
-                            <Alert status="error" borderRadius="md">
-                                {error}
+                        {status.message && (
+                            <Alert status={status.type} borderRadius="md">
+                                <AlertIcon />
+                                {status.message}
                             </Alert>
                         )}
 
-                        <form onSubmit={handleSubmit(onSubmit)} style={{ width: '100%' }} noValidate>
+                        <form onSubmit={handleSubmit(onSubmit)} style={{ width: '100%' }}>
                             <VStack spacing={4}>
                                 <FormControl isInvalid={errors.email}>
                                     <FormLabel>Email</FormLabel>
@@ -101,36 +99,21 @@ export default function LoginPage() {
                                     )}
                                 </FormControl>
 
-                                <FormControl isInvalid={errors.password}>
-                                    <FormLabel>Password</FormLabel>
-                                    <Input
-                                        type="password"
-                                        {...register('password', {
-                                            required: 'Password is required',
-                                        })}
-                                    />
-                                    {errors.password && (
-                                        <Text color="red.500" fontSize="sm" mt={1}>
-                                            {errors.password.message}
-                                        </Text>
-                                    )}
-                                </FormControl>
-
                                 <Button
                                     type="submit"
                                     colorScheme="blue"
                                     w="full"
                                     isLoading={loading}
                                 >
-                                    Sign In
+                                    Send Reset Link
                                 </Button>
                             </VStack>
                         </form>
 
                         <Text fontSize="sm" color="gray.600">
-                            Don't have an account?{' '}
-                            <Link color="blue.600" onClick={() => router.push('/register')}>
-                                Sign up
+                            Remember your password?{' '}
+                            <Link color="blue.600" onClick={() => router.push('/login')}>
+                                Sign in
                             </Link>
                         </Text>
                     </VStack>

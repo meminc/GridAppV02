@@ -15,7 +15,7 @@ export function AuthProvider({ children }) {
 
     const checkAuth = async () => {
         try {
-            const token = localStorage.getItem('token');
+            const token = localStorage.getItem('accessToken');
             if (!token) {
                 setLoading(false);
                 return;
@@ -24,7 +24,8 @@ export function AuthProvider({ children }) {
             const response = await api.get('/api/auth/me');
             setUser(response.data.user);
         } catch (error) {
-            localStorage.removeItem('token');
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
         } finally {
             setLoading(false);
         }
@@ -33,10 +34,12 @@ export function AuthProvider({ children }) {
     const login = async (email, password) => {
         try {
             const response = await api.post('/api/auth/login', { email, password });
-            const { token, user } = response.data;
+            const { accessToken, refreshToken, user } = response.data;
 
-            localStorage.setItem('token', token);
+            localStorage.setItem('accessToken', accessToken);
+            localStorage.setItem('refreshToken', refreshToken);
             setUser(user);
+
             router.push('/dashboard');
 
             return { success: true };
@@ -48,19 +51,29 @@ export function AuthProvider({ children }) {
         }
     };
 
-    const logout = () => {
-        localStorage.removeItem('token');
-        setUser(null);
-        router.push('/login');
+    const logout = async () => {
+        try {
+            const refreshToken = localStorage.getItem('refreshToken');
+            await api.post('/api/auth/logout', { refreshToken });
+        } catch (error) {
+            console.error('Logout error:', error);
+        } finally {
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            setUser(null);
+            router.push('/login');
+        }
     };
 
     const register = async (userData) => {
         try {
             const response = await api.post('/api/auth/register', userData);
-            const { token, user } = response.data;
+            const { accessToken, refreshToken, user } = response.data;
 
-            localStorage.setItem('token', token);
+            localStorage.setItem('accessToken', accessToken);
+            localStorage.setItem('refreshToken', refreshToken);
             setUser(user);
+
             router.push('/dashboard');
 
             return { success: true };
@@ -69,6 +82,24 @@ export function AuthProvider({ children }) {
                 success: false,
                 error: error.response?.data?.error || 'Registration failed',
             };
+        }
+    };
+
+    const refreshAccessToken = async () => {
+        try {
+            const refreshToken = localStorage.getItem('refreshToken');
+            if (!refreshToken) throw new Error('No refresh token');
+
+            const response = await api.post('/api/auth/refresh', { refreshToken });
+            const { accessToken, refreshToken: newRefreshToken } = response.data;
+
+            localStorage.setItem('accessToken', accessToken);
+            localStorage.setItem('refreshToken', newRefreshToken);
+
+            return accessToken;
+        } catch (error) {
+            logout();
+            throw error;
         }
     };
 
@@ -81,6 +112,7 @@ export function AuthProvider({ children }) {
                 logout,
                 register,
                 checkAuth,
+                refreshAccessToken,
             }}
         >
             {children}
