@@ -11,68 +11,84 @@ const seedTopology = async () => {
 
         // Create buses
         const buses = [
-            { id: 'bus_1', name: 'Main Station', voltage_level: 220 },
-            { id: 'bus_2', name: 'North Substation', voltage_level: 110 },
-            { id: 'bus_3', name: 'South Substation', voltage_level: 110 },
-            { id: 'bus_4', name: 'Industrial Zone', voltage_level: 33 },
-            { id: 'bus_5', name: 'Residential Area', voltage_level: 11 },
+            { id: 'bus_1', name: 'Main Station', voltage_level: 220, x: 400, y: 200 },
+            { id: 'bus_2', name: 'North Substation', voltage_level: 110, x: 200, y: 100 },
+            { id: 'bus_3', name: 'South Substation', voltage_level: 110, x: 600, y: 100 },
+            { id: 'bus_4', name: 'Industrial Zone', voltage_level: 33, x: 200, y: 400 },
+            { id: 'bus_5', name: 'Residential Area', voltage_level: 11, x: 600, y: 400 },
         ];
 
         for (const bus of buses) {
             await session.run(
-                'CREATE (b:Element:Bus {id: $id, name: $name, voltage_level: $voltage_level, status: "active"})',
-                bus
+                `CREATE (b:Element:Bus {
+          id: $id, 
+          name: $name, 
+          voltage_level: $voltage_level, 
+          status: 'active',
+          position: $position
+        })`,
+                {
+                    ...bus,
+                    position: JSON.stringify({ x: bus.x, y: bus.y })
+                }
             );
             console.log(`Created bus: ${bus.name}`);
         }
 
-        // Create generators
+        // Create generators connected to buses
         const generators = [
-            { id: 'gen_1', name: 'Main Generator', bus_id: 'bus_1', capacity: 150, output: 120 },
-            { id: 'gen_2', name: 'Backup Generator', bus_id: 'bus_1', capacity: 100, output: 0 },
-            { id: 'gen_3', name: 'Solar Farm', bus_id: 'bus_3', capacity: 50, output: 35 },
+            { id: 'gen_1', name: 'Main Generator', bus_id: 'bus_1', capacity: 150, output: 120, x: 400, y: 50 },
+            { id: 'gen_2', name: 'Backup Generator', bus_id: 'bus_1', capacity: 100, output: 0, x: 500, y: 200 },
+            { id: 'gen_3', name: 'Solar Farm', bus_id: 'bus_3', capacity: 50, output: 35, x: 700, y: 100 },
         ];
 
         for (const gen of generators) {
             await session.run(
-                `MATCH (b:Bus {id: $bus_id})
-         CREATE (g:Element:Generator {
-           id: $id, 
-           name: $name, 
-           capacity: $capacity, 
-           output: $output, 
-           status: $status
-         })
-         CREATE (g)-[:CONNECTED_TO]->(b)`,
-                { ...gen, status: gen.output > 0 ? 'active' : 'standby' }
+                `CREATE (g:Element:Generator {
+          id: $id, 
+          name: $name, 
+          capacity: $capacity, 
+          output: $output, 
+          status: $status,
+          position: $position,
+          connected_bus: $bus_id
+        })`,
+                {
+                    ...gen,
+                    status: gen.output > 0 ? 'active' : 'standby',
+                    position: JSON.stringify({ x: gen.x, y: gen.y })
+                }
             );
             console.log(`Created generator: ${gen.name}`);
         }
 
-        // Create loads
+        // Create loads connected to buses
         const loads = [
-            { id: 'load_1', name: 'Industrial Load', bus_id: 'bus_4', demand: 45, priority: 'high' },
-            { id: 'load_2', name: 'Residential Load', bus_id: 'bus_5', demand: 25, priority: 'medium' },
-            { id: 'load_3', name: 'Commercial Load', bus_id: 'bus_5', demand: 15, priority: 'low' },
+            { id: 'load_1', name: 'Industrial Load', bus_id: 'bus_4', demand: 45, priority: 'high', x: 100, y: 400 },
+            { id: 'load_2', name: 'Residential Load', bus_id: 'bus_5', demand: 25, priority: 'medium', x: 600, y: 500 },
+            { id: 'load_3', name: 'Commercial Load', bus_id: 'bus_5', demand: 15, priority: 'low', x: 700, y: 400 },
         ];
 
         for (const load of loads) {
             await session.run(
-                `MATCH (b:Bus {id: $bus_id})
-         CREATE (l:Element:Load {
-           id: $id, 
-           name: $name, 
-           demand: $demand, 
-           priority: $priority,
-           status: "active"
-         })
-         CREATE (l)-[:CONNECTED_TO]->(b)`,
-                load
+                `CREATE (l:Element:Load {
+          id: $id, 
+          name: $name, 
+          demand: $demand, 
+          priority: $priority,
+          status: 'active',
+          position: $position,
+          connected_bus: $bus_id
+        })`,
+                {
+                    ...load,
+                    position: JSON.stringify({ x: load.x, y: load.y })
+                }
             );
             console.log(`Created load: ${load.name}`);
         }
 
-        // Create lines
+        // Create lines (as edge elements, not nodes)
         const lines = [
             { id: 'line_1', name: 'Main-North Line', from: 'bus_1', to: 'bus_2', capacity: 100 },
             { id: 'line_2', name: 'Main-South Line', from: 'bus_1', to: 'bus_3', capacity: 100 },
@@ -82,43 +98,87 @@ const seedTopology = async () => {
 
         for (const line of lines) {
             await session.run(
-                `MATCH (from:Bus {id: $from}), (to:Bus {id: $to})
-         CREATE (l:Element:Line {
-           id: $id, 
-           name: $name, 
-           capacity: $capacity,
-           from_bus: $from,
-           to_bus: $to,
-           status: "active"
-         })
-         CREATE (from)-[:CONNECTED_BY {line_id: $id}]->(to)
-         CREATE (to)-[:CONNECTED_BY {line_id: $id}]->(from)`,
+                `CREATE (l:Element:Line {
+          id: $id, 
+          name: $name, 
+          capacity: $capacity,
+          from_bus: $from,
+          to_bus: $to,
+          status: 'active',
+          resistance: 0.01,
+          reactance: 0.05
+        })`,
                 line
             );
             console.log(`Created line: ${line.name}`);
         }
 
-        // Create transformers
+        // Create transformers (as edge elements)
         const transformers = [
-            { id: 'tr_1', name: 'Main Transformer', bus_id: 'bus_1', rating: 200, tap_ratio: 1.0 },
-            { id: 'tr_2', name: 'North Transformer', bus_id: 'bus_2', rating: 100, tap_ratio: 0.98 },
+            {
+                id: 'tr_1',
+                name: 'Step-down 220/110',
+                from_bus: 'bus_1',
+                to_bus: 'bus_2',
+                rating: 200,
+                tap_ratio: 0.5
+            },
+            {
+                id: 'tr_2',
+                name: 'Step-down 110/33',
+                from_bus: 'bus_2',
+                to_bus: 'bus_4',
+                rating: 100,
+                tap_ratio: 0.3
+            },
         ];
 
         for (const transformer of transformers) {
             await session.run(
-                `MATCH (b:Bus {id: $bus_id})
-         CREATE (t:Element:Transformer {
-           id: $id, 
-           name: $name, 
-           rating: $rating, 
-           tap_ratio: $tap_ratio,
-           status: "active"
-         })
-         CREATE (t)-[:CONNECTED_TO]->(b)`,
+                `CREATE (t:Element:Transformer {
+          id: $id, 
+          name: $name, 
+          rating: $rating, 
+          tap_ratio: $tap_ratio,
+          status: 'active',
+          from_bus: $from_bus,
+          to_bus: $to_bus,
+          bus_id: $from_bus,
+          secondary_bus_id: $to_bus
+        })`,
                 transformer
             );
             console.log(`Created transformer: ${transformer.name}`);
         }
+
+        // Create connections for generators and loads to their buses
+        await session.run(`
+      MATCH (g:Generator)
+      MATCH (b:Bus {id: g.connected_bus})
+      CREATE (c:Element:Line {
+        id: 'conn_' + g.id,
+        name: g.name + ' Connection',
+        from_bus: g.id,
+        to_bus: b.id,
+        capacity: g.capacity,
+        status: 'active',
+        connection_type: 'generator'
+      })
+    `);
+
+        await session.run(`
+      MATCH (l:Load)
+      MATCH (b:Bus {id: l.connected_bus})
+      CREATE (c:Element:Line {
+        id: 'conn_' + l.id,
+        name: l.name + ' Connection',
+        from_bus: b.id,
+        to_bus: l.id,
+        capacity: l.demand * 1.2,
+        status: 'active',
+        connection_type: 'load'
+      })
+    `);
 
         console.log('Topology seeding completed');
     } catch (error) {

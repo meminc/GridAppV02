@@ -75,6 +75,14 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Start telemetry simulator in development
+if (process.env.NODE_ENV === 'development') {
+  const telemetrySimulator = require('./services/telemetrySimulator');
+  setTimeout(() => {
+    telemetrySimulator.start(5000); // Update every 5 seconds
+  }, 5000);
+}
+
 // Start server
 httpServer.listen(PORT, () => {
   logger.info(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);

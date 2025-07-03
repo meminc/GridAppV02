@@ -1,11 +1,12 @@
 const rateLimit = require('express-rate-limit');
-const RedisStore = require('rate-limit-redis');
+const { RedisStore } = require('rate-limit-redis');
 const { redisClient } = require('../../config/database');
 
 // General API rate limiter
 const apiLimiter = rateLimit({
     store: new RedisStore({
         client: redisClient,
+        sendCommand: (...args) => redisClient.sendCommand(args),
         prefix: 'rl:api:',
     }),
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -19,6 +20,7 @@ const apiLimiter = rateLimit({
 const loginLimiter = rateLimit({
     store: new RedisStore({
         client: redisClient,
+        sendCommand: (...args) => redisClient.sendCommand(args),
         prefix: 'rl:login:',
     }),
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -31,6 +33,7 @@ const loginLimiter = rateLimit({
 const registerLimiter = rateLimit({
     store: new RedisStore({
         client: redisClient,
+        sendCommand: (...args) => redisClient.sendCommand(args),
         prefix: 'rl:register:',
     }),
     windowMs: 60 * 60 * 1000, // 1 hour
@@ -42,6 +45,7 @@ const registerLimiter = rateLimit({
 const passwordResetLimiter = rateLimit({
     store: new RedisStore({
         client: redisClient,
+        sendCommand: (...args) => redisClient.sendCommand(args),
         prefix: 'rl:pwreset:',
     }),
     windowMs: 60 * 60 * 1000, // 1 hour
