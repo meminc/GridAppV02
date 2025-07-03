@@ -9,7 +9,7 @@ class TelemetrySimulator {
         this.baseValues = new Map();
     }
 
-    async start(intervalMs = 5000) {
+    async start(intervalMs = 10000) {
         if (this.isRunning) {
             logger.warn('Telemetry simulator already running');
             return;
@@ -99,7 +99,7 @@ class TelemetrySimulator {
             switch (baseValue.type) {
                 case 'Bus':
                     // Simulate voltage variations
-                    metrics.voltage = this.addNoise(baseValue.voltage, 0.02); // ±2% variation
+                    metrics.voltage = this.addNoise(baseValue.voltage, 0.02) / baseValue.voltage; // ±2% variation
                     metrics.voltageChange = (metrics.voltage - baseValue.voltage) / baseValue.voltage * 100;
                     break;
 
@@ -109,11 +109,11 @@ class TelemetrySimulator {
                         const capacity = baseValue.properties.capacity || 100;
                         metrics.power = Math.min(capacity * loadFactor * this.random(0.8, 1.0), capacity);
                         metrics.frequency = this.addNoise(50, 0.002); // ±0.1 Hz
-                        metrics.voltage = this.addNoise(baseValue.properties.voltage_level || 220, 0.01);
+                        metrics.voltage = this.addNoise(baseValue.properties.voltage_level || 220, 0.01) / (baseValue.properties.voltage_level || 220);
                     } else {
                         metrics.power = 0;
                         metrics.frequency = 0;
-                        metrics.voltage = 0;
+                        metrics.voltage = 1;
                     }
                     break;
 
@@ -132,15 +132,15 @@ class TelemetrySimulator {
 
                 case 'Line':
                     // Simulate line loading
-                    metrics.current = this.random(100, 500) * loadFactor;
-                    metrics.loading = this.random(20, 80) * loadFactor;
+                    metrics.current = this.random(100, 500) * loadFactor * 0.001;
+                    metrics.loading = this.random(20, 80) * loadFactor * 0.001;
                     metrics.powerLoss = Math.pow(metrics.current, 2) * 0.01; // I²R losses
                     break;
             }
 
             // Add common metrics
-            metrics.timestamp = timestamp.toISOString();
-            metrics.status = baseValue.properties.status || 'active';
+            // metrics.timestamp = timestamp.toISOString();
+            // metrics.status = baseValue.properties.status || 'active';
 
             // Record telemetry
             try {

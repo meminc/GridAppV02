@@ -124,8 +124,15 @@ export default function NetworkViewer() {
             const response = await api.get('/api/topology');
             const { nodes, edges } = response.data;
 
+            // Filter nodes to exclude Lines and Transformers (they should be edges)
+            const actualNodes = nodes.filter(node =>
+                !['Line', 'Transformer'].includes(node.type)
+            );
+
+            // Create Cytoscape elements
             const elements = [
-                ...nodes.map(node => ({
+                // Add actual nodes (Buses, Generators, Loads)
+                ...actualNodes.map(node => ({
                     group: 'nodes',
                     data: {
                         id: node.id,
@@ -135,27 +142,57 @@ export default function NetworkViewer() {
                     },
                     position: node.position || undefined,
                 })),
-                ...edges.map(edge => ({
-                    group: 'edges',
-                    data: {
-                        id: edge.id,
-                        source: edge.source,
-                        target: edge.target,
-                        label: edge.name || '',
-                        ...edge.properties,
-                    },
-                })),
+
+                // Add edges (Lines and Transformers as connections)
+                ...edges.map(edge => {
+                    // Ensure we have valid source and target
+                    if (!edge.source || !edge.target) {
+                        console.warn('Edge missing source/target:', edge);
+                        return null;
+                    }
+
+                    return {
+                        group: 'edges',
+                        data: {
+                            id: edge.id,
+                            source: edge.source,
+                            target: edge.target,
+                            label: edge.name || `${edge.source}-${edge.target}`,
+                            type: edge.type || 'Line',
+                            elementType: edge.type || 'Line', // For compatibility
+                            ...edge.properties,
+                        },
+                    };
+                }).filter(Boolean) // Remove null entries
             ];
 
+            console.log('Loading elements:', {
+                nodes: actualNodes.length,
+                edges: edges.length,
+                elements: elements.length
+            });
+
+            // Clear existing elements and add new ones
+            cyRef.current.elements().remove();
             cyRef.current.add(elements);
 
-            // Subscribe to telemetry for all elements
-            const elementIds = nodes.map(n => n.id);
+            // Subscribe to telemetry for all actual nodes
+            const elementIds = actualNodes.map(n => n.id);
             subscribeToElements(elementIds);
 
-            // Apply initial layout
-            applyLayout(layout);
+            // Apply initial layout if we have elements
+            if (elements.length > 0) {
+                applyLayout(layout);
+            }
+
+            toast({
+                title: 'Network loaded',
+                description: `Loaded ${actualNodes.length} nodes and ${edges.length} connections`,
+                status: 'success',
+                duration: 3000,
+            });
         } catch (error) {
+            console.error('Failed to load topology:', error);
             toast({
                 title: 'Failed to load network',
                 description: error.response?.data?.error || 'Network load failed',
@@ -167,7 +204,7 @@ export default function NetworkViewer() {
 
     // Apply layout
     const applyLayout = useCallback((layoutName) => {
-        if (!cyRef.current) return;
+        if (!cyRef.current || cyRef.current.elements().length === 0) return;
 
         setIsAnimating(true);
         const layoutOptions = cytoscapeLayoutOptions[layoutName] || cytoscapeLayoutOptions.fcose;
@@ -186,28 +223,112 @@ export default function NetworkViewer() {
 
         Object.entries(telemetryData).forEach(([elementId, data]) => {
             const element = cyRef.current.getElementById(elementId);
-            if (element) {
+            if (element && element.isNode()) {
                 // Update element data
                 element.data('telemetry', data.metrics);
 
                 // Update visual properties based on telemetry
-                if (data.metrics.voltage) {
-                    element.data('voltageLevel', data.metrics.voltage);
+                if (data.metrics.voltage !== undefined) {
+                    element.data('voltage', data.metrics.voltage);
+
+                    // Update voltage level for visual feedback
+                    const baseVoltage = element.data('voltageLevel') || element.data('voltage_level') || 110;
+                    const voltageRatio = data.metrics.voltage / baseVoltage;
+
+                    // Color coding based on voltage
+                    if (voltageRatio > 1.05) {
+                        element.addClass('high-voltage');
+                        element.removeClass('low-voltage normal-voltage');
+                    } else if (voltageRatio < 0.95) {
+                        element.addClass('low-voltage');
+                        element.removeClass('high-voltage normal-voltage');
+                    } else {
+                        element.addClass('normal-voltage');
+                        element.removeClass('high-voltage low-voltage');
+                    }
                 }
 
                 if (data.metrics.status) {
                     element.data('status', data.metrics.status);
                 }
 
+                // Handle power output for generators
+                if (data.metrics.power !== undefined && element.data('type') === 'Generator') {
+                    element.data('output', data.metrics.power);
+
+                    // Update generator visual based on output
+                    const capacity = element.data('capacity') || 100;
+                    const outputRatio = data.metrics.power / capacity;
+
+                    if (outputRatio > 0.8) {
+                        element.addClass('high-output');
+                    } else if (outputRatio > 0.5) {
+                        element.addClass('medium-output');
+                    } else if (outputRatio > 0) {
+                        element.addClass('low-output');
+                    } else {
+                        element.addClass('offline');
+                    }
+                }
+
+                // Handle load data
+                if (data.metrics.power !== undefined && element.data('type') === 'Load') {
+                    element.data('currentDemand', data.metrics.power);
+                }
+
                 // Add alarm class if needed
-                if (data.metrics.alarm) {
+                if (data.metrics.alarm || data.metrics.voltageChange > 5) {
                     element.addClass('alarm');
                 } else {
                     element.removeClass('alarm');
                 }
             }
+
+            // Update edge data for lines and transformers
+            if (element && element.isEdge()) {
+                if (data.metrics.current !== undefined) {
+                    element.data('current', data.metrics.current);
+                }
+
+                if (data.metrics.loading !== undefined) {
+                    element.data('loading', data.metrics.loading);
+
+                    // Visual feedback for line loading
+                    if (data.metrics.loading > 90) {
+                        element.addClass('overloaded');
+                        element.removeClass('normal-load warning-load');
+                    } else if (data.metrics.loading > 70) {
+                        element.addClass('warning-load');
+                        element.removeClass('overloaded normal-load');
+                    } else {
+                        element.addClass('normal-load');
+                        element.removeClass('overloaded warning-load');
+                    }
+                }
+            }
         });
     }, [telemetryData]);
+
+    // Apply overlay mode
+    useEffect(() => {
+        if (!cyRef.current) return;
+
+        // Remove existing overlay classes
+        cyRef.current.elements().removeClass('overlay-voltage overlay-load overlay-alarms');
+
+        switch (overlayMode) {
+            case 'voltage':
+                cyRef.current.nodes().addClass('overlay-voltage');
+                break;
+            case 'load':
+                cyRef.current.nodes('[type="Load"]').addClass('overlay-load');
+                cyRef.current.nodes('[type="Generator"]').addClass('overlay-load');
+                break;
+            case 'alarms':
+                cyRef.current.elements('.alarm').addClass('overlay-alarms');
+                break;
+        }
+    }, [overlayMode]);
 
     // Toolbar actions
     const handleZoomIn = () => cyRef.current?.zoom(cyRef.current.zoom() * 1.2);
@@ -215,6 +336,8 @@ export default function NetworkViewer() {
     const handleFit = () => cyRef.current?.fit(50);
 
     const handleExport = () => {
+        if (!cyRef.current) return;
+
         const topology = {
             nodes: cyRef.current.nodes().map(n => ({
                 id: n.id(),
@@ -231,35 +354,46 @@ export default function NetworkViewer() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `network-topology-${new Date().toISOString()}.json`;
+        a.download = `network-topology-${new Date().toISOString().split('T')[0]}.json`;
         a.click();
         URL.revokeObjectURL(url);
+
+        toast({
+            title: 'Topology exported',
+            description: 'Network topology has been exported successfully',
+            status: 'success',
+            duration: 3000,
+        });
     };
 
     const toggleLabels = () => {
         setShowLabels(!showLabels);
-        cyRef.current.style()
-            .selector('node')
-            .style('label', showLabels ? '' : 'data(label)')
-            .update();
+        if (cyRef.current) {
+            cyRef.current.style()
+                .selector('node, edge')
+                .style('label', !showLabels ? 'data(label)' : '')
+                .update();
+        }
     };
 
     const togglePowerFlow = () => {
         setShowPowerFlow(!showPowerFlow);
         if (!showPowerFlow) {
-            cyRef.current.edges().addClass('power-flow');
+            cyRef.current?.edges().addClass('power-flow');
             animatePowerFlow();
         } else {
-            cyRef.current.edges().removeClass('power-flow');
+            cyRef.current?.edges().removeClass('power-flow');
         }
     };
 
     const animatePowerFlow = () => {
+        if (!showPowerFlow || !cyRef.current) return;
+
         let offset = 0;
         const animate = () => {
-            if (!showPowerFlow) return;
+            if (!showPowerFlow || !cyRef.current) return;
 
-            offset = (offset + 1) % 24;
+            offset = (offset + 2) % 24;
             cyRef.current.style()
                 .selector('.power-flow')
                 .style('line-dash-offset', offset)
@@ -268,6 +402,38 @@ export default function NetworkViewer() {
             requestAnimationFrame(animate);
         };
         animate();
+    };
+
+    const saveLayout = async () => {
+        if (!cyRef.current) return;
+
+        try {
+            const positions = {};
+            cyRef.current.nodes().forEach(node => {
+                positions[node.id()] = node.position();
+            });
+
+            await api.put('/api/topology/update', {
+                nodes: cyRef.current.nodes().map(n => ({
+                    id: n.id(),
+                    position: n.position(),
+                })),
+            });
+
+            toast({
+                title: 'Layout saved',
+                description: 'Node positions have been saved',
+                status: 'success',
+                duration: 3000,
+            });
+        } catch (error) {
+            toast({
+                title: 'Failed to save layout',
+                description: error.response?.data?.error || 'An error occurred',
+                status: 'error',
+                duration: 5000,
+            });
+        }
     };
 
     return (
@@ -306,7 +472,7 @@ export default function NetworkViewer() {
                                     colorScheme={showLabels ? "blue" : undefined}
                                 />
                             </Tooltip>
-                            <Tooltip label="Toggle Power Flow">
+                            <Tooltip label="Toggle Power Flow Animation">
                                 <IconButton
                                     icon={showPowerFlow ? <Pause size={18} /> : <Play size={18} />}
                                     onClick={togglePowerFlow}
@@ -323,10 +489,13 @@ export default function NetworkViewer() {
                         </Select>
 
                         <ButtonGroup size="sm" variant="outline">
+                            <Tooltip label="Save Layout">
+                                <IconButton icon={<Upload size={18} />} onClick={saveLayout} />
+                            </Tooltip>
                             <Tooltip label="Export Topology">
                                 <IconButton icon={<Download size={18} />} onClick={handleExport} />
                             </Tooltip>
-                            <Tooltip label="Refresh">
+                            <Tooltip label="Refresh Network">
                                 <IconButton
                                     icon={<RefreshCw size={18} />}
                                     onClick={loadTopology}
@@ -337,7 +506,24 @@ export default function NetworkViewer() {
                     </HStack>
 
                     {/* Cytoscape Container */}
-                    <Box ref={containerRef} flex="1" w="full" bg="gray.50" />
+                    <Box ref={containerRef} flex="1" w="full" bg="gray.50" position="relative">
+                        {/* Loading overlay */}
+                        {isAnimating && (
+                            <Box
+                                position="absolute"
+                                top="50%"
+                                left="50%"
+                                transform="translate(-50%, -50%)"
+                                bg="white"
+                                p={4}
+                                borderRadius="md"
+                                shadow="md"
+                                zIndex={1000}
+                            >
+                                Applying layout...
+                            </Box>
+                        )}
+                    </Box>
                 </VStack>
             </Card>
 
@@ -347,7 +533,7 @@ export default function NetworkViewer() {
                 <DrawerContent>
                     <DrawerCloseButton />
                     <DrawerHeader>
-                        {selectedElement?.data.type} Details
+                        {selectedElement?.data.type || selectedElement?.data.elementType} Details
                     </DrawerHeader>
                     <DrawerBody>
                         {selectedElement && (
@@ -356,7 +542,7 @@ export default function NetworkViewer() {
                                 telemetry={telemetryData[selectedElement.id]}
                                 onUpdate={(updates) => {
                                     // Update element in Cytoscape
-                                    const el = cyRef.current.getElementById(selectedElement.id);
+                                    const el = cyRef.current?.getElementById(selectedElement.id);
                                     if (el) {
                                         Object.entries(updates).forEach(([key, value]) => {
                                             el.data(key, value);

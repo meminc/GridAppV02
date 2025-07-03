@@ -22,12 +22,12 @@ class MonitoringService {
 
         for (const [metricName, metricValue] of Object.entries(metrics)) {
             params.push(
-                `(${paramCount}, ${paramCount + 1}, ${paramCount + 2}, ${paramCount + 3}, ${paramCount + 4})`
+                `($${paramCount}, $${paramCount + 1}, $${paramCount + 2}, $${paramCount + 3}, $${paramCount + 4})`
             );
             values.push(timestamp, elementId, elementType, metricName, metricValue);
             paramCount += 5;
-        }
 
+        }
         if (params.length > 0) {
             await pgPool.query(
                 `INSERT INTO monitoring.telemetry (time, element_id, element_type, metric_name, metric_value)
@@ -172,18 +172,20 @@ class MonitoringService {
         let paramCount = 1;
 
         if (filters.elementId) {
-            query += ` AND element_id = ${paramCount}`;
+            query += ` AND element_id = $${paramCount}`;
             values.push(filters.elementId);
             paramCount++;
         }
 
         if (filters.severity) {
-            query += ` AND severity = ${paramCount}`;
+            query += ` AND severity = $${paramCount}`;
             values.push(filters.severity);
             paramCount++;
         }
 
         query += ' ORDER BY created_at DESC';
+
+        console.log(query);
 
         const result = await pgPool.query(query, values);
         return result.rows;

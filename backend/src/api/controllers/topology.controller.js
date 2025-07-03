@@ -63,25 +63,35 @@ const getTopologyStats = async (req, res, next) => {
 
     try {
         const statsResult = await session.run(`
-      MATCH (n:Element)
-      WHERE NOT n:Line AND NOT n:Transformer
-      WITH count(n) as totalNodes,
-           sum(CASE WHEN n.status = 'active' THEN 1 ELSE 0 END) as activeNodes
-      MATCH (g:Generator)
-      WHERE g.status = 'active'
-      WITH totalNodes, activeNodes, sum(g.output) as totalGeneration
-      MATCH (l:Load)
-      WHERE l.status = 'active'
-      WITH totalNodes, activeNodes, totalGeneration, sum(l.demand) as totalLoad
-      MATCH (line:Line)
-      WHERE line.status = 'active'
-      WITH totalNodes, activeNodes, totalGeneration, totalLoad, count(line) as activeLines
-      MATCH (tr:Transformer)
-      WHERE tr.status = 'active'
-      RETURN totalNodes, activeNodes, 
-             coalesce(totalGeneration, 0) as totalGeneration, 
-             coalesce(totalLoad, 0) as totalLoad,
-             activeLines + count(tr) as activeConnections
+    MATCH (n:Element)
+    WHERE NOT n:Line AND NOT n:Transformer
+    WITH count(n) as totalNodes,
+        sum(CASE WHEN n.status = 'active' THEN 1 ELSE 0 END) as activeNodes
+
+    MATCH (g:Generator)
+    WHERE g.status = 'active'
+    WITH totalNodes, activeNodes,
+        sum(g.output) as totalGeneration
+
+    MATCH (l:Load)
+    WHERE l.status = 'active'
+    WITH totalNodes, activeNodes, totalGeneration,
+        sum(l.demand) as totalLoad
+
+    MATCH (line:Line)
+    WHERE line.status = 'active'
+    WITH totalNodes, activeNodes, totalGeneration, totalLoad,
+        count(line) as activeLines
+
+    MATCH (tr:Transformer)
+    WHERE tr.status = 'active'
+    WITH totalNodes, activeNodes, totalGeneration, totalLoad, activeLines,
+        count(tr) as activeTransformers
+
+    RETURN totalNodes, activeNodes,
+        coalesce(totalGeneration, 0) as totalGeneration,
+        coalesce(totalLoad, 0) as totalLoad,
+        (activeLines + activeTransformers) as activeConnections
     `);
 
         const stats = statsResult.records[0] || {

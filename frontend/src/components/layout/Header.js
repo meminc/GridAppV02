@@ -40,10 +40,10 @@ export default function Header() {
                         />
                     </Button>
 
-                    <Button leftIcon={<Settings size={20} />} variant="ghost" />
+                    <Button as={Button} variant="ghost" />
 
                     <Menu>
-                        <MenuButton as={Button} rightIcon={<ChevronDown size={16} />} variant="ghost">
+                        <MenuButton rightIcon={<ChevronDown size={16} />} variant="ghost">
                             <HStack spacing={2}>
                                 <Avatar size="sm" name={user?.firstName + ' ' + user?.lastName} />
                                 <Text fontSize="sm">{user?.firstName}</Text>
