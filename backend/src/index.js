@@ -6,6 +6,7 @@ const { initializeWebSocket } = require('./services/websocket');
 const securityMiddleware = require('./api/middleware/security');
 const rateLimiter = require('./api/middleware/rateLimiter');
 const { logger } = require('./config/database');
+const systemStatusService = require('./services/systemStatus.service');
 
 // Load environment variables
 dotenv.config();
@@ -16,6 +17,7 @@ const PORT = process.env.PORT || 3001;
 
 // Initialize WebSocket
 initializeWebSocket(httpServer);
+systemStatusService.startHealthMonitoring();
 
 // Security middleware
 securityMiddleware(app);
@@ -37,6 +39,17 @@ if (process.env.NODE_ENV === 'development') {
     next();
   });
 }
+
+app.use((req, res, next) => {
+  const start = Date.now();
+
+  res.on('finish', () => {
+    const responseTime = Date.now() - start;
+    systemStatusService.recordPerformanceMetric(responseTime);
+  });
+
+  next();
+});
 
 // API Routes
 app.use('/api', routes);
@@ -75,6 +88,7 @@ app.use((err, req, res, next) => {
   });
 });
 
+/*
 // Start telemetry simulator in development
 if (process.env.NODE_ENV === 'development') {
   const telemetrySimulator = require('./services/telemetrySimulator');
@@ -82,6 +96,7 @@ if (process.env.NODE_ENV === 'development') {
     telemetrySimulator.start(5000); // Update every 5 seconds
   }, 5000);
 }
+*/
 
 // Start server
 httpServer.listen(PORT, () => {

@@ -43,10 +43,11 @@ export default function Header() {
                     <Button as={Button} variant="ghost" />
 
                     <Menu>
-                        <MenuButton rightIcon={<ChevronDown size={16} />} variant="ghost">
+                        <MenuButton as={Button} variant="ghost">
                             <HStack spacing={2}>
                                 <Avatar size="sm" name={user?.firstName + ' ' + user?.lastName} />
                                 <Text fontSize="sm">{user?.firstName}</Text>
+                                <ChevronDown size={16} />
                             </HStack>
                         </MenuButton>
                         <MenuList>

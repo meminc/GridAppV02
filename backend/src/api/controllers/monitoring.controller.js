@@ -1,5 +1,6 @@
 const monitoringService = require('../../services/monitoring.service');
 const { neo4jDriver } = require('../../config/database');
+const systemStatusService = require('../../services/systemStatus.service');
 
 const getLatestTelemetry = async (req, res, next) => {
     try {
@@ -34,6 +35,185 @@ const getActiveAlarms = async (req, res, next) => {
         };
         const alarms = await monitoringService.getActiveAlarms(filters);
         res.json({ alarms });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getSystemHealth = async (req, res, next) => {
+    try {
+        const health = await systemStatusService.getSystemHealth();
+        res.json(health);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getDetailedSystemStatus = async (req, res, next) => {
+    try {
+        const status = await systemStatusService.getDetailedStatus();
+        res.json(status);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getPerformanceMetrics = async (req, res, next) => {
+    try {
+        const { timeRange = '1h' } = req.query;
+
+        // Convert time range to hours
+        const hours = {
+            '1h': 1,
+            '6h': 6,
+            '24h': 24,
+            '7d': 168,
+        }[timeRange] || 1;
+
+        const endTime = new Date();
+        const startTime = new Date(endTime.getTime() - (hours * 60 * 60 * 1000));
+
+        // Get telemetry statistics
+        const telemetryStats = await pgPool.query(`
+            SELECT 
+                date_trunc('minute', time) as minute,
+                count(*) as telemetry_count,
+                count(DISTINCT element_id) as active_elements
+            FROM monitoring.telemetry 
+            WHERE time >= $1 AND time <= $2
+            GROUP BY date_trunc('minute', time)
+            ORDER BY minute
+        `, [startTime, endTime]);
+
+        // Get alarm statistics
+        const alarmStats = await pgPool.query(`
+            SELECT 
+                severity,
+                count(*) as count,
+                count(CASE WHEN is_acknowledged THEN 1 END) as acknowledged_count
+            FROM monitoring.alarms 
+            WHERE created_at >= $1 AND created_at <= $2
+            GROUP BY severity
+        `, [startTime, endTime]);
+
+        const metrics = {
+            timeRange,
+            startTime: startTime.toISOString(),
+            endTime: endTime.toISOString(),
+            telemetry: telemetryStats.rows,
+            alarms: alarmStats.rows,
+            system: await systemStatusService.getSystemMetrics(),
+        };
+
+        res.json({ metrics });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getAlertsSummary = async (req, res, next) => {
+    try {
+        const { timeRange = '24h' } = req.query;
+
+        const hours = {
+            '1h': 1,
+            '6h': 6,
+            '24h': 24,
+            '7d': 168,
+        }[timeRange] || 24;
+
+        const startTime = new Date(Date.now() - (hours * 60 * 60 * 1000));
+
+        // Get alarm summary
+        const alarmSummary = await pgPool.query(`
+            SELECT 
+                severity,
+                alarm_type,
+                element_type,
+                count(*) as count,
+                count(CASE WHEN is_active THEN 1 END) as active_count,
+                count(CASE WHEN is_acknowledged THEN 1 END) as acknowledged_count,
+                min(created_at) as first_occurrence,
+                max(created_at) as last_occurrence
+            FROM monitoring.alarms 
+            WHERE created_at >= $1
+            GROUP BY severity, alarm_type, element_type
+            ORDER BY count DESC, severity DESC
+        `, [startTime]);
+
+        // Get top problematic elements
+        const problematicElements = await pgPool.query(`
+            SELECT 
+                element_id,
+                element_type,
+                count(*) as alarm_count,
+                count(CASE WHEN severity = 'critical' THEN 1 END) as critical_count,
+                count(CASE WHEN is_active THEN 1 END) as active_alarm_count
+            FROM monitoring.alarms 
+            WHERE created_at >= $1
+            GROUP BY element_id, element_type
+            HAVING count(*) > 1
+            ORDER BY critical_count DESC, alarm_count DESC
+            LIMIT 10
+        `, [startTime]);
+
+        const summary = {
+            timeRange,
+            period: `${hours} hours`,
+            alarmTypes: alarmSummary.rows,
+            problematicElements: problematicElements.rows,
+            totals: {
+                totalAlarms: alarmSummary.rows.reduce((sum, row) => sum + parseInt(row.count), 0),
+                activeAlarms: alarmSummary.rows.reduce((sum, row) => sum + parseInt(row.active_count), 0),
+                criticalAlarms: alarmSummary.rows
+                    .filter(row => row.severity === 'critical')
+                    .reduce((sum, row) => sum + parseInt(row.count), 0),
+            },
+        };
+
+        res.json({ summary });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getDashboardData = async (req, res, next) => {
+    try {
+        // Get current system status
+        const systemHealth = await systemStatusService.getSystemHealth();
+
+        // Get recent telemetry summary
+        const recentTelemetry = await pgPool.query(`
+            SELECT 
+                element_type,
+                count(DISTINCT element_id) as element_count,
+                avg(metric_value) as avg_value,
+                max(time) as last_update
+            FROM monitoring.telemetry 
+            WHERE time >= NOW() - INTERVAL '5 minutes'
+            AND metric_name IN ('voltage', 'power', 'loading')
+            GROUP BY element_type
+        `);
+
+        // Get active alarms count by severity
+        const activeAlarms = await pgPool.query(`
+            SELECT 
+                severity,
+                count(*) as count
+            FROM monitoring.alarms 
+            WHERE is_active = true
+            GROUP BY severity
+        `);
+
+        const dashboardData = {
+            timestamp: new Date().toISOString(),
+            systemHealth,
+            telemetry: recentTelemetry.rows,
+            alarms: activeAlarms.rows,
+            status: 'operational',
+        };
+
+        res.json(dashboardData);
     } catch (error) {
         next(error);
     }
@@ -136,4 +316,9 @@ module.exports = {
     acknowledgeAlarm,
     getSystemMetrics,
     submitTelemetry,
+    getSystemHealth,
+    getDetailedSystemStatus,
+    getPerformanceMetrics,
+    getAlertsSummary,
+    getDashboardData,
 };

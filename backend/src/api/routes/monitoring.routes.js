@@ -58,4 +58,36 @@ router.post('/telemetry',
     monitoringController.submitTelemetry
 );
 
+// System health and status endpoints
+router.get('/system/health',
+    monitoringController.getSystemHealth
+);
+
+router.get('/system/status',
+    monitoringController.getDetailedSystemStatus
+);
+
+// Performance metrics endpoint
+router.get('/performance/metrics',
+    [
+        query('timeRange').optional().isIn(['1h', '6h', '24h', '7d']),
+    ],
+    validate,
+    monitoringController.getPerformanceMetrics
+);
+
+// Alerts summary endpoint
+router.get('/alerts/summary',
+    [
+        query('timeRange').optional().isIn(['1h', '6h', '24h', '7d']),
+    ],
+    validate,
+    monitoringController.getAlertsSummary
+);
+
+// Dashboard data endpoint (aggregated data for dashboard)
+router.get('/dashboard/data',
+    monitoringController.getDashboardData
+);
+
 module.exports = router;

@@ -1,5 +1,6 @@
 .PHONY: help up down restart logs setup clean test
 
+# UPDATE the help command to include new options:
 help:
 	@echo "Available commands:"
 	@echo "  make setup    - Initial setup of the project"
@@ -9,6 +10,13 @@ help:
 	@echo "  make logs     - View logs from all services"
 	@echo "  make clean    - Clean up volumes and containers"
 	@echo "  make test     - Run all tests"
+	@echo ""
+	@echo "Python Simulator commands:"
+	@echo "  make simulator-logs     - View simulator logs"
+	@echo "  make simulator-shell    - Access simulator shell"
+	@echo "  make simulator-restart  - Restart simulator"
+	@echo "  make simulator-health   - Check simulator health"
+	@echo "  make simulator-metrics  - View simulator metrics"
 
 setup:
 	@echo "Setting up development environment..."
@@ -55,3 +63,25 @@ frontend-shell:
 
 redis-cli:
 	@docker compose exec redis redis-cli -a grid_redis_password
+
+# Python Simulator specific commands
+simulator-logs:
+	@docker compose logs -f telemetry-simulator
+
+simulator-shell:
+	@docker compose exec telemetry-simulator sh
+
+simulator-restart:
+	@docker compose restart telemetry-simulator
+
+simulator-health:
+	@curl -s http://localhost:8080/health | jq .
+
+simulator-metrics:
+	@curl -s http://localhost:8080/metrics
+
+simulator-stop:
+	@docker compose stop telemetry-simulator
+
+simulator-start:
+	@docker compose start telemetry-simulator

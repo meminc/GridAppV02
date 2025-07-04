@@ -20,6 +20,17 @@ router.post(
 );
 
 router.post(
+  '/service-login',
+  [
+    body('email').isEmail().normalizeEmail(),
+    body('password').notEmpty(),
+    body('service').isBoolean(),
+  ],
+  validate,
+  authController.serviceLogin
+);
+
+router.post(
   '/register',
   rateLimiter.register,
   [

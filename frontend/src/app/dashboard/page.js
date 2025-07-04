@@ -45,6 +45,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/layout/MainLayout';
+import RealTimeCharts from '@/components/monitoring/RealTimeCharts';
 import {
     Activity,
     AlertCircle,
@@ -433,6 +434,22 @@ export default function DashboardPage() {
                 </Grid>
 
                 {/* Main Content Grid */}
+                {/* Real-time Charts Section */}
+                <Grid templateColumns={{ base: '1fr', xl: '1fr 1fr' }} gap={6} mb={6}>
+                    <RealTimeCharts
+                        elementIds={Object.keys(telemetryData).slice(0, 5)} // Show first 5 elements
+                        chartType="voltage"
+                        maxDataPoints={30}
+                    />
+
+                    <RealTimeCharts
+                        elementIds={Object.keys(telemetryData).filter(id =>
+                            telemetryData[id]?.metrics?.type === 'Generator'
+                        )}
+                        chartType="power"
+                        maxDataPoints={30}
+                    />
+                </Grid>
                 <Grid templateColumns={{ base: '1fr', xl: '2fr 1fr' }} gap={6} mb={6}>
                     {/* Historical Trends Chart */}
                     <Card>

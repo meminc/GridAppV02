@@ -77,6 +77,46 @@ const login = async (req, res, next) => {
     }
 };
 
+const serviceLogin = async (req, res, next) => {
+    try {
+        const { email, password, service } = req.body;
+
+        // Validate service credentials
+        if (!service || email !== 'simulator@gridmonitor.com') {
+            return res.status(401).json({ error: 'Invalid service credentials' });
+        }
+
+        // Check service password (in production, use proper service key validation)
+        const validServiceKey = process.env.SIMULATOR_SERVICE_KEY || 'simulator_service_key';
+        if (password !== validServiceKey) {
+            await auditService.log('SERVICE_LOGIN_FAILED', null, 'service', email, { reason: 'Invalid service key' });
+            return res.status(401).json({ error: 'Invalid service credentials' });
+        }
+
+        // Create service user token
+        const serviceUser = {
+            id: 'service-simulator',
+            email: email,
+            role: 'service',
+            service: true
+        };
+
+        // Generate longer-lived token for services
+        const accessToken = generateToken(serviceUser, '30d'); // 30 days for services
+
+        // Log successful service login
+        await auditService.log('SERVICE_LOGIN_SUCCESS', serviceUser.id, 'service', serviceUser.id, { service: 'telemetry-simulator' });
+
+        res.json({
+            accessToken,
+            user: serviceUser,
+            service: true
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 const register = async (req, res, next) => {
     try {
         const { email, password, firstName, lastName } = req.body;
@@ -470,4 +510,5 @@ module.exports = {
     resetPassword,
     verifyEmail,
     resendVerification,
+    serviceLogin,
 };
