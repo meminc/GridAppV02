@@ -549,11 +549,14 @@ class GridSimulator:
             message=message
         )
         
-        # Store in database
-        await db_manager.store_alarm(alarm)
-        
-        # Emit via WebSocket
-        await self.ws_client.emit_alarm(alarm)
+        # Choose submission method based on configuration
+        if settings.FIELD_DEVICE_MODE:
+            # Send via API as field device
+            await self.ws_client.submit_alarm_via_api(alarm)
+        else:
+            # Original method: store in DB and emit via WebSocket
+            await db_manager.store_alarm(alarm)
+            await self.ws_client.emit_alarm(alarm)
         
         self.state.total_alarms_generated += 1
         logger.warning(f"Alarm generated: {alarm_type} for {element_id} - {message}")
@@ -562,6 +565,7 @@ class GridSimulator:
         """Run one simulation cycle for all elements"""
         start_time = datetime.now()
         telemetry_batch = []
+        api_telemetry_batch = []
         
         try:
             for element_id, element in self.elements.items():
@@ -586,14 +590,26 @@ class GridSimulator:
                 
                 telemetry_batch.append(metrics)
                 
-                # Cache latest telemetry
-                await db_manager.cache_latest_telemetry(element_id, metrics)
-                
-                # Emit via WebSocket
-                await self.ws_client.emit_telemetry(element_id, metrics)
+                # Choose submission method based on configuration
+                if settings.FIELD_DEVICE_MODE:
+                    # Send via API as field device
+                    api_telemetry_batch.append((element_id, metrics))
+                    
+                    # Send in batches
+                    if len(api_telemetry_batch) >= settings.API_BATCH_SIZE:
+                        await self._send_telemetry_batch_via_api(api_telemetry_batch)
+                        api_telemetry_batch = []
+                else:
+                    # Original method: cache and emit via WebSocket
+                    await db_manager.cache_latest_telemetry(element_id, metrics)
+                    await self.ws_client.emit_telemetry(element_id, metrics)
             
-            # Store telemetry batch
-            if telemetry_batch:
+            # Send remaining batch if in field device mode
+            if settings.FIELD_DEVICE_MODE and api_telemetry_batch:
+                await self._send_telemetry_batch_via_api(api_telemetry_batch)
+            
+            # Store telemetry batch (only if not in field device mode)
+            if not settings.FIELD_DEVICE_MODE and telemetry_batch:
                 await db_manager.store_telemetry_batch(telemetry_batch)
             
             # Update state
@@ -613,6 +629,29 @@ class GridSimulator:
         except Exception as e:
             self.state.error_count += 1
             logger.error(f"Simulation cycle error: {e}")
+
+    async def _send_telemetry_batch_via_api(self, telemetry_batch):
+        """Send batch of telemetry data via API with retry logic"""
+        for attempt in range(settings.API_RETRY_ATTEMPTS):
+            try:
+                success_count = 0
+                for element_id, metrics in telemetry_batch:
+                    if await self.ws_client.emit_telemetry_via_api(element_id, metrics):
+                        success_count += 1
+                    else:
+                        # Small delay between failed attempts
+                        await asyncio.sleep(0.1)
+                
+                if success_count == len(telemetry_batch):
+                    logger.debug(f"Successfully sent {success_count} telemetry points via API")
+                    break
+                else:
+                    logger.warning(f"Only {success_count}/{len(telemetry_batch)} telemetry points sent successfully")
+                    
+            except Exception as e:
+                logger.error(f"Batch telemetry API submission attempt {attempt + 1} failed: {e}")
+                if attempt < settings.API_RETRY_ATTEMPTS - 1:
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
     
     async def run(self):
         """Main simulation loop"""

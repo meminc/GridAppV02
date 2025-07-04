@@ -39,6 +39,18 @@ class Settings(BaseSettings):
     BATCH_SIZE: int = 100
     MAX_RETRIES: int = 3
     RETRY_DELAY: int = 5
+
+    # Field Device Simulation Mode
+    FIELD_DEVICE_MODE: bool = True  # True = send via API, False = direct to DB
+    API_BATCH_SIZE: int = 10  # Number of telemetry points to batch
+    API_RETRY_ATTEMPTS: int = 3
+    API_TIMEOUT: int = 10
+    
+    # Device Authentication
+    DEVICE_ID: str = "FIELD_SIMULATOR_001"
+    DEVICE_TYPE: str = "telemetry_collector"
+    DEVICE_LOCATION: str = "simulation_field"
+    
     
     class Config:
         env_file = ".env"

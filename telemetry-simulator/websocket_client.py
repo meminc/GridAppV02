@@ -193,6 +193,77 @@ class WebSocketClient:
             self.connected = False
             logger.info("WebSocket disconnected")
 
+    async def emit_telemetry_via_api(self, element_id: str, metrics: TelemetryMetrics):
+        """Send telemetry data via HTTP API as a field device would"""
+        if not self.auth_token:
+            await self._authenticate()
+        
+        try:
+            # Convert metrics to API format
+            telemetry_payload = {
+                "elementId": element_id,
+                "metrics": {k: v for k, v in metrics.dict().items() 
+                        if v is not None and k not in ['timestamp', 'element_id', 'element_type']}
+            }
+            
+            headers = {"Authorization": f"Bearer {self.auth_token}"}
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{settings.BACKEND_API_URL}/api/monitoring/telemetry",
+                    json=telemetry_payload,
+                    headers=headers,
+                    timeout=10
+                )
+                
+                if response.status_code != 200:
+                    logger.warning(f"API telemetry submission failed: {response.status_code}")
+                    return False
+                    
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to send telemetry via API for {element_id}: {e}")
+            return False
+
+    async def submit_alarm_via_api(self, alarm: AlarmData):
+        """Submit alarm via API instead of direct WebSocket"""
+        if not self.auth_token:
+            await self._authenticate()
+        
+        try:
+            alarm_payload = {
+                "elementId": alarm.element_id,
+                "elementType": alarm.element_type.value,
+                "alarmType": alarm.alarm_type,
+                "severity": alarm.severity.value,
+                "message": alarm.message,
+                "thresholdValue": alarm.threshold_value,
+                "actualValue": alarm.actual_value
+            }
+            
+            headers = {"Authorization": f"Bearer {self.auth_token}"}
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{settings.BACKEND_API_URL}/api/monitoring/alarms",
+                    json=alarm_payload,
+                    headers=headers,
+                    timeout=10
+                )
+                
+                if response.status_code != 200:
+                    logger.warning(f"API alarm submission failed: {response.status_code}")
+                    return False
+                    
+            logger.info(f"Alarm submitted via API: {alarm.alarm_type} for {alarm.element_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to submit alarm via API: {e}")
+            return False
+
+    
 
 # Alternative HTTP client for fallback communication
 class HTTPClient:
